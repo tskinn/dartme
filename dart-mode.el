@@ -1,120 +1,77 @@
 ;;; package --- Summary
 ;;; Commentary:
 ;;; Code:
+
 ;; define keywords
 ;; (setq dart-keywords-zero '("assert" "break" "case" "catch" "class" "const" "continue" "default" "do" "else" "enum" "extends" "false" "final" "finally" "for" "if" "in" "is" "new" "null" "rethrow" "return" "super" "switch" "this" "throw" "true" "try" "var" "void" "while" "with"))
 ;; (setq dart-keywords-one '("abstract" "as" "covariant" "deferred" "dynamic" "export" "external" "factory" "get" "implements" "import" "library" "operator" "part" "set" "static" "typedef"))
 ;; (setq dart-keywords-two '("async" "await" "sync" "yield"))
+;; (setq dart-types '("int" "double" "num" "bool"))
 
 
-;; "assert" "break" "case" "catch" "class" "const" "continue" "default" "do" "else" "enum" "extends" "false" "final" "finally" "for" "if" "in" "is" "new" "null" "rethrow" "return" "super" "switch" "this" "throw" "true" "try" "var" "void" "while" "with" "abstract" "as" "covariant" "deferred" "dynamic" "export" "external" "factory" "get" "implements" "import" "library" "operator" "part" "set" "static" "typedef" "async" "await" "sync" "yield"
+;; define several category of keywords
+(setq dart-keywords '("assert" "break" "case" "catch" "class" "const" "continue" "default" "do" "else" "enum" "extends" "false" "final" "finally" "for" "if" "in" "is" "new" "null" "rethrow" "return" "super" "switch" "this" "throw" "true" "try" "var" "void" "while" "with" "abstract" "as" "covariant" "deferred" "dynamic" "export" "external" "factory" "get" "implements" "import" "library" "operator" "part" "set" "static" "typedef" "async" "await" "sync" "yield") )
+(setq dart-types '("double" "int" "num" "bool"))
+(setq dart-constants '("false" "true" "null"))
+;;(setq dart-events '("at_rot_target" "at_target" "attach"))
+;;(setq dart-functions '("llAbs" "llAcos" "llAddToLandBanList" "llAddToLandPassList"))
 
-(defvar dart-mode-hook nil)
-
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;               MAP
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-(defvar dart-mode-map
-  (let ((map (make-keymap)))
-    (define-key map "\C-j" 'newline-and-indent)
-    map)
-  "Keymap for Dart major mode.")
-;; OR
-(defvar dart-mode-map
-  (let ((map (make-sparse-keymap)))
-    (unless (boundp 'electric-indent-chars)                   ;;
-      (define-key map "}" #'dart-mode-insert-and-indent)      ;; delete this maybe
-      (define-key map ")" #'dart-mode-insert-and-indent))     ;;
-    (define-key map (kbd "C-c C-a") #'dart-import-add)
-    map)
-  "Keymap used for Dart major mode.")
-
-;;;###autoload
-(add-to-list 'auto-mode-alist '("\\.dart\\'" . dart-mode))
-
-
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;              FONT LOCK
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-(defconst dart-dangling-operators-regexp "[^-]-\\|[^+]\\|+\\|[/*&><.=|^|]") ;; from golang
-(defconst dart--max-dangling-operator-length 2
-  "The maximum length of dangling operators.")
-
-(defconst dart-identifier-regexp "_?[[:word:][:multibyte:]]+")
-(defconst dart-type-name-no-prefix-regexp "\\(?:[[:word:][:multibyte:]]+\\.\\)?[[:word:][:multibyte:]]+")
-(defconst dart-qualified-identifier-regexp (concat dart-identifier-regexp "\\." dart-type-name-no-prefix-regexp))
-(defconst dart-label-regexp dart-identifier-regexp)
-(defconst dart-type-regexp "[[:word:][:multibyte:]*]+")
-(defconst dart-func-regexp dart-identifier-regexp)
-(defconst dart-func-meth-regexp "")
-
-(defconst dart-builtins
-  '("")
-  "All built-in functions in the Dart language. Used for font locking.")
-
-(defconst dart-keywords
-  '("assert" "break" "case" "catch" "class" "const" "continue" "default" "do" "else" "enum" "extends" "false" "final" "finally" "for" "if" "in" "is" "new" "null" "rethrow" "return" "super" "switch" "this" "throw" "true" "try" "var" "void" "while" "with" "abstract" "as" "covariant" "deferred" "dynamic" "export" "external" "factory" "get" "implements" "import" "library" "operator" "part" "set" "static" "typedef" "async" "await" "sync" "yield")
-  "All keywords in dart.")
-(defconst dart-constants
-  '("true" "false" "null")
-  "All constants.")
-
+;; generate regex string for each category of keywords
 (setq dart-keywords-regexp (regexp-opt dart-keywords 'words))
-(setq dart-constants-regexp (regexp-opt dart-constants 'words))
+(setq dart-type-regexp (regexp-opt dart-types 'words))
+(setq dart-constant-regexp (regexp-opt dart-constants 'words))
+;; (setq dart-event-regexp (regexp-opt dart-events 'words))
+;; (setq dart-functions-regexp (regexp-opt dart-functions 'words))
 
+;; create the list for font-lock.
+;; each category of keyword is given a particular face
 (setq dart-font-lock-keywords
       `(
-	(,dart-constants-regexp . font-lock-constant-face)
-	(,dart-keywords-regexp . font-lock-kewords)
-	("'\\{3\\}\\(.*?\n*?\\)*?'\\{3\\}" . font-lock-multiline)
-	("\"\\{3\\}\\(.*\n*\\)*?\"\\{3\\}" . font-lock-multiline)))
+        (,dart-type-regexp . font-lock-type-face)
+        (,dart-constant-regexp . font-lock-constant-face)
+;;        (,dart-event-regexp . font-lock-builtin-face)
+;;        (,dart-functions-regexp . font-lock-function-name-face)
+        (,dart-keywords-regexp . font-lock-keyword-face)
+        ;; note: order above matters, because once colored, that part won't change.
+        ;; in general, longer words first
+        ))
 
-;;(defconst dart-type-name-regexp (concat ""))
-;; (defconst dart-font-lock-keywords-1
-;;   (list
-;;    '("'\\{3\\}\\(.*?\n*?\\)*?'\\{3\\}" . font-lock-multiline) ;; '''
-;;    '("\"\\{3\\}\\(.*\n*\\)*?\"\\{3\\}" . font-lock-multiline)) ;; """
-;;   "Minimal highlighting expressions for Dart mode.")
-
-;; (defun dart--build-font-lock-keywords ()
-;;   (append
-;;    '((,(concat "\\_<" (regexp-opt dart-constants t) "\\_>") . font-lock-constant-face))
-;;    '((,(concat "\\_<" (regexp-opt dart-keywords t) "\\_>") . font-lock-keyword-face))
-;;    '(,("'\\{3\\}\\(.*?\n*?\\)*?'\\{3\\}" . font-lock-multiline))
-;;    '(,("\"\\{3\\}\\(.*\n*\\)*?\"\\{3\\}" . font-lock-multiline))))
-
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;              SYNTAX TABLE
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-(defvar dart-mode-syntax-table
-  (let ((st (make-syntax-table)))
-    (modify-syntax-entry ?_ "w" st)      ;;
-    (modify-syntax-entry ?/ ". 124b" st) ;;
-    (modify-syntax-entry ?* ". 23" st)   ;;  see https://www.gnu.org/software/emacs/manual/html_node/elisp/Syntax-Flags.html#Syntax-Flags
-    (modify-syntax-entry ?\n "> b" st)   ;; comment ender
-    (modify-syntax-entry ?' "\"" st)     ;; ' string delimiter
-    (modify-syntax-entry ?\" "\"" st)    ;; " string delimiter
-    st)
-  "Syntax table for dart-mode.")
-
-
-;; (defun dart-mode ()
-;;   "Major mode for editing dart files"
-;;   (interactive)
-;;   (kill-all-local-variables)
-;;   (set-syntax-table dart-mode-syntax-table)
-;;   (use-local-map dart-mode-map)
-;;   (set (make-local-variable 'font-lock-defaults) '(dart-font-lock-keywords))
-;;   (set (make-local-variable 'indent-line-function) 'dart-indent-line)
-;;   (setq major-mode 'dart-mode)
-;;   (setq mode-name "Dart")
-;;   (run-hooks 'dart-mode-hook))
-;; OR
+;;;###autoload
 (define-derived-mode dart-mode prog-mode "iDart"
-  "Major mode for editing dart files."
-  (setq font-lock-defaults '((dart-font-lock-keywords)))
-;;  (set (make-local-variable 'font-lock-defaults) '(dart-font-lock-keywords))
-  (set (make-local-variable 'indent-line-function) 'dart-indent-line))
+  "Major mode for editing LSL (Linden Scripting Language)…"
+
+  ;; code for syntax highlighting
+  (setq font-lock-defaults '((dart-font-lock-keywords))))
+
+;; clear memory. no longer needed
+(setq dart-keywords nil)
+(setq dart-types nil)
+(setq dart-constants nil)
+;;(setq dart-events nil)
+;;(setq dart-functions nil)
+
+;; clear memory. no longer needed
+(setq dart-keywords-regexp nil)
+(setq dart-types-regexp nil)
+(setq dart-constants-regexp nil)
+;; (setq dart-events-regexp nil)
+;; (setq dart-functions-regexp nil)
+
+
+(setq dart-executable-path (executable-find "dart"))
+(setq dart-analysis-server-path "/opt/dart-sdk/bin/snapshots/analysis_server.dart.snapshot")
+;; start processes using pipe
+;; (let ((process-connection-type nil))  ; Use a pipe.
+;;   (start-process ...))
+(defun create-dart-process ()
+  "Some docs."
+  (let ((process-connection-type nil))
+    (let ((proc (start-process "dart-process" "*dart*" dart-executable-path dart-analysis-server-path)))
+      proc)))
+
+(setq dart-process (create-dart-process))
+;(setq dart-process (start-process "dart-process" "*dart*" dart-executable-path dart-analysis-server-path))
+
 
 (provide 'dart-mode)
 ;;; dart-mode.el ends here
