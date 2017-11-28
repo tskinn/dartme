@@ -2,6 +2,8 @@
 ;;; Commentary:
 ;;; Code:
 
+(require 'json)
+
 ;; define keywords
 ;; (setq dart-keywords-zero '("assert" "break" "case" "catch" "class" "const" "continue" "default" "do" "else" "enum" "extends" "false" "final" "finally" "for" "if" "in" "is" "new" "null" "rethrow" "return" "super" "switch" "this" "throw" "true" "try" "var" "void" "while" "with"))
 ;; (setq dart-keywords-one '("abstract" "as" "covariant" "deferred" "dynamic" "export" "external" "factory" "get" "implements" "import" "library" "operator" "part" "set" "static" "typedef"))
@@ -57,20 +59,40 @@
 ;; (setq dart-events-regexp nil)
 ;; (setq dart-functions-regexp nil)
 
+(defvar dart-analysis-request-id 1
+  "ID used to for requests to the analysis server. Simply increments for each call.")
+(defvar dart-callback-length 200
+  "Length of the vector that temporarily stores callbacks.")
+(defconst dart-buffer-name "*dart-analysis*"
+  "Name of the dart process buffer.")
+(defvar dart-analysis-server-callbacks (make-vector dart-callback-length nil)
+  "Vector that temporarily holds callbacks.")
+;; TODO just change this to a hash map. Don't risk it.
 
 (setq dart-executable-path (executable-find "dart"))
 (setq dart-analysis-server-path "/opt/dart-sdk/bin/snapshots/analysis_server.dart.snapshot")
+
 ;; start processes using pipe
 ;; (let ((process-connection-type nil))  ; Use a pipe.
 ;;   (start-process ...))
-(defun create-dart-process ()
+
+(defun dart-start-analyzer-process ()
   "Some docs."
   (let ((process-connection-type nil))
-    (let ((proc (start-process "dart-process" "*dart*" dart-executable-path dart-analysis-server-path)))
-      proc)))
+    (let ((proc (start-process "dart-process" dart-buffer-name dart-executable-path dart-analysis-server-path)))
+      (setq dart-process proc))))
 
-(setq dart-process (create-dart-process))
-;(setq dart-process (start-process "dart-process" "*dart*" dart-executable-path dart-analysis-server-path))
+(defun dart-call-call-back (id)
+  "Call the callback at given index mod length."
+  ((% (string-to-int id) dart-callback-length)))
+
+(defvar dart-process nil
+  "Handle to the process running the dart analysis server.")
+
+(defun dart-terminate-process ()
+  "Terminate the dart analysis server process."
+  (delete-process dart-buffer-name)
+  (kill-buffer dart-buffer-name))
 
 
 (provide 'dart-mode)
