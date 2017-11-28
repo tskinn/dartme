@@ -61,13 +61,10 @@
 
 (defvar dart-analysis-request-id 1
   "ID used to for requests to the analysis server. Simply increments for each call.")
-(defvar dart-callback-length 200
-  "Length of the vector that temporarily stores callbacks.")
 (defconst dart-buffer-name "*dart-analysis*"
   "Name of the dart process buffer.")
-(defvar dart-analysis-server-callbacks (make-vector dart-callback-length nil)
-  "Vector that temporarily holds callbacks.")
-;; TODO just change this to a hash map. Don't risk it.
+(defvar dart-analysis-server-callbacks (make-hash-table :test 'equal)
+  "Hash Table that temporarily holds callbacks.")
 
 (setq dart-executable-path (executable-find "dart"))
 (setq dart-analysis-server-path "/opt/dart-sdk/bin/snapshots/analysis_server.dart.snapshot")
@@ -83,8 +80,14 @@
       (setq dart-process proc))))
 
 (defun dart-call-call-back (id)
-  "Call the callback at given index mod length."
-  ((% (string-to-int id) dart-callback-length)))
+  "Call the callback at given ID and then delete it from the hash-table."
+  '(gethash dart-analysis-server-callbacks id)
+  (remhash dart-analysis-server-callbacks id))
+
+(defun dart-set-call-back (callback)
+  "Save the given CALLBACK."
+  (puthash dart-analysis-request-id callback dart-analysis-server-callbacks)
+  (setq dart-analysis-request-id (+ dart-analysis-request-id 1)))
 
 (defvar dart-process nil
   "Handle to the process running the dart analysis server.")
