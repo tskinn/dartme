@@ -1814,33 +1814,29 @@ This replaces references to TEMP-FILE with REAL-FILE."
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;; Eldoc
 
-(defun dart--eldoc-function ()
-	"Return a doc string appropriate for current context, or nil."
-	"hello")
+;; (defun dart--eldoc-function ()
+;; 	"Return a doc string appropriate for current context, or nil."
+;; 	"hello")
 
 (defun dart--eldoc-function ()
 	"Return a doc string appropriate for current context, or nil."
 	(-when-let (filename (buffer-file-name))
-		(let ((show-in-buffer show-in-buffer)
-					(buffer (current-buffer))
-					(pos (point))
-					(message "dart-send thing")
-					(dart--analysis-server-send
-					 "analysis.getHover"
-					 `(("file" . ,filename) ("offset" . ,pos))
-					 (lambda (response)
-						 (-when-let (hover (car (dart--get response 'result 'hovers)))
-							 (dart--json-let hover
-									 (offset
-										length
-										dartdoc
-										(element-description elementDescription)
-										(element-kind elementKind)
-										(is-deprecated isDeprecated)
-										parameter)
-								 (eldoc-message element-description)
-								 (message element-description)))))
-					)))
+		(let ((pos (point)))
+			(dart--analysis-server-send
+			 "analysis.getHover"
+			 `(("file" . ,filename) ("offset" . ,pos))
+			 (lambda (response)
+				 (-when-let (hover (car (dart--get response 'result 'hovers)))
+					 (dart--json-let hover
+							 (offset
+								length
+								dartdoc
+								(element-description elementDescription)
+								(element-kind elementKind)
+								(is-deprecated isDeprecated)
+								parameter)
+						 (eldoc-message element-description)
+						 (message element-description)))))))
 	nil)
 
 
