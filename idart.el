@@ -1835,8 +1835,7 @@ This replaces references to TEMP-FILE with REAL-FILE."
 								(element-kind elementKind)
 								(is-deprecated isDeprecated)
 								parameter)
-						 (eldoc-message element-description)
-						 (message element-description)))))))
+						 (eldoc-message element-description)))))))
 	nil)
 
 
