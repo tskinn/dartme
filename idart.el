@@ -93,6 +93,7 @@
 (require 'dash)
 (require 'flycheck)
 (require 'json)
+(require 'pos-tip)
 (require 's)
 
 
@@ -1838,6 +1839,38 @@ This replaces references to TEMP-FILE with REAL-FILE."
 						 (eldoc-message element-description)))))))
 	nil)
 
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;; Pos
+(defvar dart-enable-auto-pos-tip t
+	"Determines if pos-tip on or off.")
+
+(defvar dart-pos-tip-delay 1
+	"Seconds before pos-tip displays.")
+
+(defun dart--turn-on-pos-tip-with-timer ()
+	"Set up the timer for pos-tip."
+	(run-with-idle-timer dart-pos-tip-delay 0 (lambda()
+																							 (if (eq major-mode 'idart-mode)
+																									 (dart-show-pos-tip)))))
+
+(defun dart-show-pos-tip ()
+	"Show pos-tip if possible."
+	(-when-let (filename (buffer-file-name))
+		(let ((pos (point)))
+			(dart--analysis-server-send
+			 "analysis.getHover"
+			 `(("file" . ,filename) ("offset" . ,pos))
+			 (lambda (response)
+				 (-when-let (hover (car (dart--get response 'result 'hovers)))
+					 (dart--json-let hover
+							 (offset
+								length
+								dartdoc
+								(element-description elementDescription)
+								(element-kind elementKind)
+								(is-deprecated isDeprecated)
+								parameter)
+						 (if dartdoc
+								 (pos-tip-show dartdoc)))))))))
 
 ;;(setq-local eldoc-documentation-function #'dart--eldoc-function)
 ;; (set (make-local-variable 'eldoc-documentation-function)
@@ -1862,6 +1895,8 @@ This replaces references to TEMP-FILE with REAL-FILE."
 	(add-function :before-until (local 'eldoc-documentation-function)
                 #'dart--eldoc-function)
 	(add-hook 'idart-mode 'turn-on-eldoc-mode)
+	(if dart-enable-auto-pos-tip
+			(setq dart-pos-tip-timer (dart--turn-on-pos-tip-with-timer)))
 	)
 
 ;;;###autoload
