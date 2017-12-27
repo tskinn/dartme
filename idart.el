@@ -1843,6 +1843,80 @@ This replaces references to TEMP-FILE with REAL-FILE."
 ;; (set (make-local-variable 'eldoc-documentation-function)
 ;; 		 'dart--eldoc-function)
 
+
+
+(defconst dart-dangling-operators-regexp "[^-]-\\|[^+]\\+\\|[/*&><.=|^]")
+(defconst dart--max-dangling-operator-length 2
+  "The maximum length of dangling operators.
+This must be at least the length of the longest string matched by
+‘dart-dangling-operators-regexp.’, and must be updated whenever
+that constant is changed.")
+
+(defconst dart-identifier-regexp "[[:word:][:multibyte:]]+")
+(defconst dart-type-name-no-prefix-regexp "\\(?:[[:word:][:multibyte:]]+\\.\\)?[[:word:][:multibyte:]]+")
+(defconst dart-qualified-identifier-regexp (concat dart-identifier-regexp "\\." dart-identifier-regexp))
+(defconst dart-label-regexp dart-identifier-regexp)
+(defconst dart-type-regexp "[[:word:][:multibyte:]*]+")
+(defconst dart-func-regexp (concat "\\_<func\\_>\\s *\\(" dart-identifier-regexp "\\)"))
+(defconst dart-func-meth-regexp (concat
+                               "\\_<func\\_>\\s *\\(?:(\\s *"
+                               "\\(" dart-identifier-regexp "\\s +\\)?" dart-type-regexp
+                               "\\s *)\\s *\\)?\\("
+                               dart-identifier-regexp
+                               "\\)("))
+
+(defconst dart-builtins
+  '("append" "cap"   "close"   "complex" "copy"
+    "delete" "imag"  "len"     "make"    "new"
+    "panic"  "print" "println" "real"    "recover")
+  "All built-in functions in the Go language.  Used for font locking.")
+
+(defconst dart-mode-keywords
+  '("break"    "default"     "func"   "interface" "select"
+    "case"     "defer"       "go"     "map"       "struct"
+    "chan"     "else"        "goto"   "package"   "switch"
+    "const"    "fallthrough" "if"     "range"     "type"
+    "continue" "for"         "import" "return"    "var")
+  "All keywords in the Go language.  Used for font locking.")
+
+(defconst dart-constants '("nil" "true" "false" "iota"))
+(defconst dart-type-name-regexp (concat "\\(?:[*(]\\)*\\(\\(?:" go-identifier-regexp "\\.\\)?" go-identifier-regexp "\\)"))
+
+
+(defun dart--build-font-lock-keywords ()
+	"Do some stuff."
+	(append
+	 `((,(concat "\\_<" (regexp-opt dart-mode-keywords t) "\\_>") . font-lock-keyword-face)
+		 (,(concat "\\(\\_<" (regexp-opt go-builtins t) "\\_>\\)[[:space:]]*(") 1 font-lock-builtin-face)
+		 (,(concat "\\_<" (regexp-opt dart-constants t) "\\_>") . font-lock-constant-face)
+		 )))
+
+
+(defvar dart-mode-syntax-table
+	(let ((st (make-syntax-table)))
+		(modify-syntax-entry ?+  "." st)
+    (modify-syntax-entry ?-  "." st)
+    (modify-syntax-entry ?%  "." st)
+    (modify-syntax-entry ?&  "." st)
+    (modify-syntax-entry ?|  "." st)
+    (modify-syntax-entry ?^  "." st)
+    (modify-syntax-entry ?!  "." st)
+    (modify-syntax-entry ?=  "." st)
+    (modify-syntax-entry ?<  "." st)
+    (modify-syntax-entry ?>  "." st)
+    (modify-syntax-entry ?/  ". 124b" st)
+    (modify-syntax-entry ?*  ". 23" st)
+    (modify-syntax-entry ?\n "> b" st)
+    (modify-syntax-entry ?\" "\"" st)
+    (modify-syntax-entry ?\' "\"" st)
+    (modify-syntax-entry ?`  "\"" st)
+		(modify-syntax-entry ?\\ "\\" st)
+		(modify-syntax-entry ?_ "w" st)
+		
+		st)
+	"Syntax table for Dart mode.")
+
+
 ;;; Initialization
 
 ;;;###autoload (add-to-list 'auto-mode-alist '("\\.dart\\'" . dart-mode))
@@ -1850,13 +1924,17 @@ This replaces references to TEMP-FILE with REAL-FILE."
 
 (define-derived-mode idart-mode prog-mode "iDart"
 	"Major mode for editing Dart"
-;	(kill-all-local-variables)
-;	(set-syntax-table dart-mode-syntax-table)
+																				;	(kill-all-local-variables)
+																				;	(set-syntax-table dart-mode-syntax-table)
+	:syntax-table dart-mode-syntax-table
+	
 	(when dart-enable-analysis-server
 		(if (null dart-sdk-path)
 				(dart-log
 				 "Cannot find 'dart' executable or Dart analysis server snapshot.")
 			(dart--start-analysis-server-for-current-buffer)))
+	(set (make-local-variable 'font-lock-defaults)
+			 '(dart--build-font-lock-keywords))
 	(add-hook (make-local-variable 'before-save-hook)
 						(lambda () (when dart-format-on-save (dart-format))))
 	(add-function :before-until (local 'eldoc-documentation-function)
