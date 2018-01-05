@@ -1949,10 +1949,11 @@ that constant is changed.")
 		st)
 	"Syntax table for Dart mode.")
 
-(defun dart-syntax-is-tiple-quote (start)
+(defun dart-syntax-is-triple-quote (start)
 	"Check if START is beginning of triple quote."
 	(save-excursion
 		(goto-char start)
+		(message "istriplequote")
 		(when (looking-at-p "\\('''\\)\\|\\(\"\"\"\\)")
 			t)))
 
@@ -1985,7 +1986,7 @@ that constant is changed.")
 Propertize text from START to END."
 	(save-excursion
 		(goto-char start)
-		
+		(message "%s %s" start end)
 		;; if we are inside a string already
 		;;  check the type of string ('' "" '''''' """""" r'' r"")
 		;;   if single quotes don't do anything
@@ -1993,11 +1994,17 @@ Propertize text from START to END."
 		;;     if found
 		;;       mark last quote and call dart-syntax-properties again from new Start to END
 		;;     else do nothing
-		(when (re-search-forward "\\('''\\)\\|\\(\"\"\"\\)\\|\\(r\"\\)" end t)
-			(let ((matchingquote (nth 8 (syntax-ppss (match-beginning 0)))))
-				(when (and matchingquote (equal (char-after matchingquote) (char-after (match-beginning 0))) (dart-syntax-is-tiple-quote matchingquote))
-					 (put-text-property (match-beginning 0) (1+ (match-beginning 0)) 'syntax-table (string-to-syntax "|")))
-			))
+		(when (re-search-forward "\\('''\\)\\|\\(\"\"\"\\)" end t)
+			(message "hello")
+			(if-let ((matchingquote (nth 8 (syntax-ppss (match-beginning 0)))))			 
+					(if (and (equal (char-after matchingquote) (char-after (match-beginning 0))) (dart-syntax-is-triple-quote matchingquote))
+							(put-text-property (+ (match-beginning 0) 2) (+ (match-beginning 0) 3) 'syntax-table (string-to-syntax "|")))
+				(put-text-property (match-beginning 0) (+ (match-beginning 0) 1) 'syntax-table (string-to-syntax "|")))
+			(when (< (match-end 0) end)
+				(dart-syntax-propertize (1+ (match-end 0)) end)))
+			;; (when (< (match-end 0) end)
+			;; 	(message "try again")
+			;;	(dart-syntax-propertize (match-end 0) end))
 		
 		;; (funcall
 		;;  (syntax-propertize-rules
