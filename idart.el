@@ -95,7 +95,7 @@
 (require 'json)
 (require 'pos-tip)
 (require 's)
-
+(require 'rx)
 
 
 ;;; Utility functions and macros
@@ -1949,8 +1949,73 @@ that constant is changed.")
 		st)
 	"Syntax table for Dart mode.")
 
+(defun dart-syntax-is-tiple-quote (start)
+	"Check if START is beginning of triple quote."
+	(save-excursion
+		(goto-char start)
+		(when (looking-at-p "\\('''\\)\\|\\(\"\"\"\\)")
+			t)))
 
-;;; Initialization
+(defun dart--is-tiple-quote ()
+	"Check if START is beginning of triple quote."
+	(interactive)
+	(save-excursion
+		(goto-char (point))
+		(when(looking-at-p "\\('''\\)\\|\\(\"\"\"\\)")
+			(message "yes")
+			t)))
+
+
+(defun dart-syntaxify ()
+	(interactive)
+	(save-excursion
+		;; if we are inside a string already
+		;;  check the type of string ('' "" '''''' """""" r'' r"")
+		;;   if single quotes don't do anything
+		;;   else search for matching quotes in within START and END
+		;;     if found
+		;;       mark last quote and call dart-syntax-properties again from new Start to END
+		;;     else do nothing
+		(when (re-search-forward "\\('''\\)\\|\\(\"\"\"\\)\\|\\(r\"\\)" (point-max) t)
+			(let ((beg (match-beginning 0)))
+				(put-text-property beg (1+ beg) 'test-prop "hello")))))
+
+(defun dart-syntax-propertize (start end)
+	"A 'syntax-propertize-function for `dart-mode'.
+Propertize text from START to END."
+	(save-excursion
+		(goto-char start)
+		
+		;; if we are inside a string already
+		;;  check the type of string ('' "" '''''' """""" r'' r"")
+		;;   if single quotes don't do anything
+		;;   else search for matching quotes in within START and END
+		;;     if found
+		;;       mark last quote and call dart-syntax-properties again from new Start to END
+		;;     else do nothing
+		(when (re-search-forward "\\('''\\)\\|\\(\"\"\"\\)\\|\\(r\"\\)" end t)
+			(let ((matchingquote (nth 8 (syntax-ppss (match-beginning 0)))))
+				(when (and matchingquote (equal (char-after matchingquote) (char-after (match-beginning 0))) (dart-syntax-is-tiple-quote matchingquote))
+					 (put-text-property (match-beginning 0) (1+ (match-beginning 0)) 'syntax-table (string-to-syntax "|")))
+			))
+		
+		;; (funcall
+		;;  (syntax-propertize-rules
+		;; 	("'''" (0 "|"))))
+
+		
+		;; (let (start-string (nth 8 (syntax-ppss)))
+		;; 	(if (dart-syntax-is-triple-quote start-string)
+		;; 			(put-text-property (char-after 1) (char-after 2)
+		;; 												 'syntax-table (string-to-syntax "|")))
+		;; (if (nth 8 (syntax-ppss))
+		;; 		(got-char (nth 8 (syntax-ppss)))
+			
+		;; 		(checkifinsidetriplequote)
+		;; 	(lookfortriplequote))
+		))
+
+;;; initialization
 
 ;;;###autoload (add-to-list 'auto-mode-alist '("\\.dart\\'" . dart-mode))
 (add-to-list 'auto-mode-alist '("\\.dart\\'" . idart-mode))
@@ -1975,7 +2040,7 @@ that constant is changed.")
 	(add-hook 'idart-mode 'turn-on-eldoc-mode)
 	(if dart-enable-auto-pos-tip
 			(setq dart-pos-tip-timer (dart--turn-on-pos-tip-with-timer)))
-	)
+	(setq-local syntax-propertize-function #'dart-syntax-propertize))
 
 ;;;###autoload
 ;; (defun dart-mode ()
@@ -2010,5 +2075,4 @@ that constant is changed.")
 ;;   (c-update-modeline))
 
 (provide 'idart-mode)
-
 ;;; idart-mode.el ends here
