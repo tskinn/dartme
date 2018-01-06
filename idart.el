@@ -97,7 +97,6 @@
 (require 's)
 (require 'rx)
 
-
 ;;; Utility functions and macros
 
 (defun dart-beginning-of-statement ()
@@ -1885,12 +1884,13 @@ This must be at least the length of the longest string matched by
 ‘dart-dangling-operators-regexp.’, and must be updated whenever
 that constant is changed.")
 
-(defconst dart-identifier-regexp "[[:word:][:multibyte:]]+")
+(defconst dart-identifier-regexp "_?[[:word:][:multibyte:]]+")
 (defconst dart-type-name-no-prefix-regexp "\\(?:[[:word:][:multibyte:]]+\\.\\)?[[:word:][:multibyte:]]+")
 (defconst dart-qualified-identifier-regexp (concat dart-identifier-regexp "\\." dart-identifier-regexp))
 (defconst dart-label-regexp dart-identifier-regexp)
 (defconst dart-type-regexp "[[:word:][:multibyte:]*]+")
 (defconst dart-func-regexp (concat "\\_<func\\_>\\s *\\(" dart-identifier-regexp "\\)"))
+(defconst dart-variable-regexp "\\(\\w+\\)\\s-+=")
 (defconst dart-func-meth-regexp (concat
                                "\\_<func\\_>\\s *\\(?:(\\s *"
                                "\\(" dart-identifier-regexp "\\s +\\)?" dart-type-regexp
@@ -1898,21 +1898,28 @@ that constant is changed.")
                                dart-identifier-regexp
                                "\\)("))
 
-(defconst dart-builtins
-  '("append" "cap"   "close"   "complex" "copy"
-    "delete" "imag"  "len"     "make"    "new"
-    "panic"  "print" "println" "real"    "recover")
-  "All built-in functions in the Go language.  Used for font locking.")
+;; (defconst dart-builtins
+;;   '("append" "cap"   "close"   "complex" "copy"
+;;     "delete" "imag"  "len"     "make"    "new"
+;;     "panic"  "print" "println" "real"    "recover")
+;;   "All built-in functions in the Go language.  Used for font locking.")
 
 (defconst dart-mode-keywords
-  '("break"    "default"     "func"   "interface" "select"
-    "case"     "defer"       "go"     "map"       "struct"
-    "chan"     "else"        "goto"   "package"   "switch"
-    "const"    "fallthrough" "if"     "range"     "type"
-    "continue" "for"         "import" "return"    "var")
+  '(
+		"assert" "break" "case" "catch" "class"
+		"const" "continue" "default" "do" "else"
+		"enum" "extends" "false" "final" "finally"
+		"for" "if" "in" "is" "new" "null" "rethrow"
+		"return" "super" "switch" "this" "throw"
+		"true" "try" "var" "void" "while" "with"
+		"abstract" "as" "covariant" "deferred"
+		"dynamic" "export" "external" "factory"
+		"get" "implements" "import" "library"
+		"operator" "part" "set" "static" "typedef"
+		"async" "await" "sync" "yield" "this")
   "All keywords in the Go language.  Used for font locking.")
 
-(defconst dart-constants '("nil" "true" "false" "iota"))
+(defconst dart-constants '("null" "true" "false"))
 (defconst dart-type-name-regexp (concat "\\(?:[*(]\\)*\\(\\(?:" go-identifier-regexp "\\.\\)?" go-identifier-regexp "\\)"))
 
 
@@ -1922,7 +1929,17 @@ that constant is changed.")
 	 `((,(concat "\\_<" (regexp-opt dart-mode-keywords t) "\\_>") . font-lock-keyword-face)
 		 (,(concat "\\(\\_<" (regexp-opt go-builtins t) "\\_>\\)[[:space:]]*(") 1 font-lock-builtin-face)
 		 (,(concat "\\_<" (regexp-opt dart-constants t) "\\_>") . font-lock-constant-face)
+		 (,(concat "\\(" dart-identifier-regexp "\\)[[:space:]]*(") 1 font-lock-function-name-face)
+		 (,dart-identifier-regexp . font-lock-variable-name-face)
 		 )))
+																				; font-lock-builtin-face (no need to highlight builtins differently)
+																				; font-lock-constant-face (null )
+																				; font-lock-doc-face
+																				; font-lock-function-name-face
+																				; font-lock-keyword-face
+																				; font-lock-type-face
+																				; font-lock-variable-name-face
+
 
 
 (defvar dart-mode-syntax-table
@@ -1953,7 +1970,6 @@ that constant is changed.")
 	"Check if START is beginning of triple quote."
 	(save-excursion
 		(goto-char start)
-		(message "istriplequote")
 		(when (looking-at-p "\\('''\\)\\|\\(\"\"\"\\)")
 			t)))
 
@@ -1963,7 +1979,6 @@ that constant is changed.")
 	(save-excursion
 		(goto-char (point))
 		(when(looking-at-p "\\('''\\)\\|\\(\"\"\"\\)")
-			(message "yes")
 			t)))
 
 
@@ -1986,7 +2001,6 @@ that constant is changed.")
 Propertize text from START to END."
 	(save-excursion
 		(goto-char start)
-		(message "%s %s" start end)
 		;; if we are inside a string already
 		;;  check the type of string ('' "" '''''' """""" r'' r"")
 		;;   if single quotes don't do anything
@@ -1995,7 +2009,6 @@ Propertize text from START to END."
 		;;       mark last quote and call dart-syntax-properties again from new Start to END
 		;;     else do nothing
 		(when (re-search-forward "\\('''\\)\\|\\(\"\"\"\\)" end t)
-			(message "hello")
 			(if-let ((matchingquote (nth 8 (syntax-ppss (match-beginning 0)))))			 
 					(if (and (equal (char-after matchingquote) (char-after (match-beginning 0))) (dart-syntax-is-triple-quote matchingquote))
 							(put-text-property (+ (match-beginning 0) 2) (+ (match-beginning 0) 3) 'syntax-table (string-to-syntax "|")))
@@ -2022,6 +2035,102 @@ Propertize text from START to END."
 		;; 	(lookfortriplequote))
 		))
 
+
+
+
+
+
+
+
+
+
+(defun dart--company-prepare-candidates (response)
+  "Build completion from the parsed data received from the analysis server.
+
+Argument RESPONSE contains the candidates, documentation, parameters to be displayed."
+  (-when-let* ((completions (cdr (assq 'results (assq 'params response)))))
+    (mapcar
+     (lambda (completion)
+       (let ((docSummary (assoc 'docSummary completion))
+						 (parameters  (assoc 'parameters (assoc 'element completion)))
+						 (docComplete  (assoc 'docComplete completion))
+						 (candidate (cdr (assq 'completion completion))))
+				 (propertize  candidate
+											(car parameters) (cdr parameters)
+											(car docSummary) (cdr docSummary)
+											(car docComplete) (cdr docComplete))))
+     completions)))
+
+
+(defun dart--get-completions (callback buffer)
+  "Ask the analysis server for suggestions.
+
+Argument CALLBACK is the function passed by  ‘company-mode’.
+Argument BUFFER the buffer containing the dart file."
+
+  (dart--analysis-server-send
+   "completion.getSuggestions"
+   `((file . ,(buffer-file-name))
+     (offset . ,(point)))
+   (lambda (response)
+     ;;set the dart-completion-callback on dart-mode, so that it will in turn
+     ;;execute company mode callback.
+     (setq dart-completion-callback
+					 (lambda (resp)
+						 (-when-let* ((candidates (dart--company-prepare-candidates
+																			 resp)))
+							 (with-current-buffer buffer
+								 (funcall callback  candidates))))))))
+
+(defun dart--completion-annotation (s)
+  "Show method parameters as annotations S."
+  (get-text-property 0 'parameters s))
+
+(defun dart--completion-meta (s)
+  "Show summary documentation S."
+  (get-text-property 0 'docSummary s))
+
+(defun dart--completion-doc (s)
+  "Show complete documentation in the help buffer S."
+  (--when-let (get-text-property 0 'docComplete s)
+    (company-doc-buffer it)))
+
+(defun dart--company-prefix ()
+  (let ((sym (company-grab-symbol-cons "\\." 1)))
+    (if (consp sym) sym nil)))
+
+;;;###autoload
+(defun company-dart (command &optional arg &rest ignored)
+  (interactive (list 'interactive))
+  (cl-case command
+    (interactive (company-begin-backend 'company-dart))
+    (prefix (and (derived-mode-p 'idart-mode)
+								 (dart--company-prefix)))
+    (candidates
+     (cons :async
+					 (lambda (callback)
+						 (message "im in a lambda")
+						 (dart--get-completions callback (current-buffer)))))
+    (duplicates t)
+    (annotation (dart--completion-annotation arg))
+    (doc-buffer (dart--completion-doc arg))
+    (meta (dart--completion-meta arg))
+    (post-completion (let ((anno (dart--completion-annotation arg))
+													 (meta (dart--completion-meta arg)))
+											 (when (> (length anno) 0)
+												 ;;not a getter
+												 (insert "()"))
+											 (when (> (length anno) 2)
+												 ;; > 2 implies non empty argument list
+												 (backward-char))
+											 (pos-tip-show (format "%s\n%s" anno meta) nil nil
+																		 nil -1)))))
+
+
+
+
+
+
 ;;; initialization
 
 ;;;###autoload (add-to-list 'auto-mode-alist '("\\.dart\\'" . dart-mode))
@@ -2047,7 +2156,11 @@ Propertize text from START to END."
 	(add-hook 'idart-mode 'turn-on-eldoc-mode)
 	(if dart-enable-auto-pos-tip
 			(setq dart-pos-tip-timer (dart--turn-on-pos-tip-with-timer)))
-	(setq-local syntax-propertize-function #'dart-syntax-propertize))
+	(setq-local syntax-propertize-function #'dart-syntax-propertize)
+	(add-hook 'idart-mode (lambda ()
+													(set (make-local-variable 'company-backends)
+															 '(company-dart))))
+	(setq company-async-timeout 10))
 
 ;;;###autoload
 ;; (defun dart-mode ()
