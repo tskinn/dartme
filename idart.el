@@ -1511,7 +1511,8 @@ that constant is changed.")
 (defun dart--build-font-lock-keywords ()
 	"Do some stuff."
 	(append
-	 `((,(concat "\\_<" (regexp-opt dart-mode-keywords t) "\\_>") . font-lock-keyword-face)
+	 `((,"\\_<[0-9]+\\_>" . font-lock-constant-face)
+		 (,(concat "\\_<" (regexp-opt dart-mode-keywords t) "\\_>") . font-lock-keyword-face)
 		 (,(concat "\\(\\_<" (regexp-opt go-builtins t) "\\_>\\)[[:space:]]*(") 1 font-lock-builtin-face)
 		 (,(concat "\\_<" (regexp-opt dart-constants t) "\\_>") . font-lock-constant-face)
 		 (,(concat "\\(" dart-identifier-regexp "\\)[[:space:]]*(") 1 font-lock-function-name-face)
@@ -1558,29 +1559,6 @@ that constant is changed.")
 		(when (looking-at-p "\\('''\\)\\|\\(\"\"\"\\)")
 			t)))
 
-(defun dart--is-tiple-quote ()
-	"Check if START is beginning of triple quote."
-	(interactive)
-	(save-excursion
-		(goto-char (point))
-		(when(looking-at-p "\\('''\\)\\|\\(\"\"\"\\)")
-			t)))
-
-
-(defun dart-syntaxify ()
-	(interactive)
-	(save-excursion
-		;; if we are inside a string already
-		;;  check the type of string ('' "" '''''' """""" r'' r"")
-		;;   if single quotes don't do anything
-		;;   else search for matching quotes in within START and END
-		;;     if found
-		;;       mark last quote and call dart-syntax-properties again from new Start to END
-		;;     else do nothing
-		(when (re-search-forward "\\('''\\)\\|\\(\"\"\"\\)\\|\\(r\"\\)" (point-max) t)
-			(let ((beg (match-beginning 0)))
-				(put-text-property beg (1+ beg) 'test-prop "hello")))))
-
 (defun dart-syntax-propertize (start end)
 	"A 'syntax-propertize-function for `dart-mode'.
 Propertize text from START to END."
@@ -1599,26 +1577,7 @@ Propertize text from START to END."
 							(put-text-property (+ (match-beginning 0) 2) (+ (match-beginning 0) 3) 'syntax-table (string-to-syntax "|")))
 				(put-text-property (match-beginning 0) (+ (match-beginning 0) 1) 'syntax-table (string-to-syntax "|")))
 			(when (< (match-end 0) end)
-				(dart-syntax-propertize (1+ (match-end 0)) end)))
-			;; (when (< (match-end 0) end)
-			;; 	(message "try again")
-			;;	(dart-syntax-propertize (match-end 0) end))
-		
-		;; (funcall
-		;;  (syntax-propertize-rules
-		;; 	("'''" (0 "|"))))
-
-		
-		;; (let (start-string (nth 8 (syntax-ppss)))
-		;; 	(if (dart-syntax-is-triple-quote start-string)
-		;; 			(put-text-property (char-after 1) (char-after 2)
-		;; 												 'syntax-table (string-to-syntax "|")))
-		;; (if (nth 8 (syntax-ppss))
-		;; 		(got-char (nth 8 (syntax-ppss)))
-			
-		;; 		(checkifinsidetriplequote)
-		;; 	(lookfortriplequote))
-		))
+				(dart-syntax-propertize (1+ (match-end 0)) end)))))
 
 
 
@@ -1645,44 +1604,28 @@ Argument RESPONSE contains the candidates, documentation, parameters to be displ
 
 Argument CALLBACK is the function passed by  ‘company-mode’.
 Argument BUFFER the buffer containing the dart file."
-	(message "im in dart--get-completions")
 	(-when-let (filename (buffer-file-name))
     (dart--analysis-server-send
      "completion.getSuggestions"
      `(("file" . ,filename)
        ("offset" . ,(- (point) 1)))
 		 (lambda (response)
-			 (message "im in lambda of dart--get-completions")
          (-when-let (completion-id (dart--get response 'result 'id))
            (dart--analysis-server-subscribe
             "completion.results"
             (setq dart--last-expand-subscription
                   (lambda (event subscription)
-										(message "im in lambda of lambda of dart--get-completions")
                     (dart--json-let event
                         (id results
                             (offset replacementOffset)
                             (length replacementLength)
                             (is-last isLast))
                       (when is-last (dart--analysis-server-unsubscribe subscription))
-
                       (when (equal id completion-id)
-												(message "im in matchin completion id")
 												(let ((candidates (dart--company-prepare-candidates results)))
 													(print candidates)
 													(with-current-buffer buffer
 														(funcall callback candidates)))))))))))))
-	;; (message "sending to server")
-  ;; (dart--analysis-server-send
-  ;;  "completion.getSuggestions"
-  ;;  `((file . ,(buffer-file-name))
-  ;;    (offset . ,(point)))
-  ;;  (lambda (response)
-	;; 	 (message "response: %s" (json-encode response))
-	;; 	 (let ((candidates (dart--company-prepare-candidates
-	;; 											(dart--get response 'result))))
-	;; 		 (with-current-buffer buffer
-	;; 			 (funcall callback candidates))))))
 
 (defun dart--completion-annotation (s)
   "Show method parameters as annotations S."
@@ -1711,7 +1654,6 @@ Argument BUFFER the buffer containing the dart file."
     (candidates
      (cons :async
 					 (lambda (callback)
-						 (message "im in a lambda")
 						 (dart--get-completions callback (current-buffer)))))
     (duplicates t)
     (annotation (dart--completion-annotation arg))
@@ -1726,8 +1668,7 @@ Argument BUFFER the buffer containing the dart file."
 												 ;; > 2 implies non empty argument list
 												 (backward-char))
 											 (pos-tip-show (format "%s\n%s" anno meta) nil nil
-																		 nil -1)))
-		))
+																		 nil -1)))))
 
 
 
@@ -1741,10 +1682,7 @@ Argument BUFFER the buffer containing the dart file."
 
 (define-derived-mode idart-mode prog-mode "iDart"
 	"Major mode for editing Dart"
-																				;	(kill-all-local-variables)
-																				;	(set-syntax-table dart-mode-syntax-table)
 	:syntax-table dart-mode-syntax-table
-	
 	(when dart-enable-analysis-server
 		(if (null dart-sdk-path)
 				(dart-log
@@ -1760,42 +1698,7 @@ Argument BUFFER the buffer containing the dart file."
 	(if dart-enable-auto-pos-tip
 			(setq dart-pos-tip-timer (dart--turn-on-pos-tip-with-timer)))
 	(setq-local syntax-propertize-function #'dart-syntax-propertize)
-	(add-hook 'idart-mode (lambda ()
-													(set (make-local-variable 'company-backends)
-															 '(company-dart))))
-	(setq company-async-timeout 2))
-
-;;;###autoload
-;; (defun dart-mode ()
-;;   "Major mode for editing Dart files.
-
-;; The hook `c-mode-common-hook' is run with no args at mode
-;; initialization, then `dart-mode-hook'.
-
-;; Key bindings:
-;; \\{dart-mode-map}"
-;;   (interactive)
-;;   (kill-all-local-variables)
-;;   (c-initialize-cc-mode t)
-;;   (set-syntax-table dart-mode-syntax-table)
-;;   (setq major-mode 'dart-mode
-;;         mode-name "Dart")
-;;   (use-local-map dart-mode-map)
-;;   (c-init-language-vars dart-mode)
-;;   (c-common-init 'dart-mode)
-;;   (c-set-style "dart")
-;;   (when dart-enable-analysis-server
-;;     (if (null dart-sdk-path)
-;;         (dart-log
-;;          "Cannot find `dart' executable or Dart analysis server snapshot.")
-;;       (dart--start-analysis-server-for-current-buffer)))
-
-;;   (add-hook (make-local-variable 'before-save-hook)
-;;             (lambda () (when dart-format-on-save (dart-format))))
-
-;;   (run-hooks 'c-mode-common-hook)
-;;   (run-hooks 'dart-mode-hook)
-;;   (c-update-modeline))
+	(set (make-local-variable 'company-backends) '(company-dart)))
 
 (provide 'idart-mode)
-;;; idart-mode.el ends here
+;;; idart.el ends here
