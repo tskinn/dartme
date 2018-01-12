@@ -96,6 +96,8 @@
 (require 'pos-tip)
 (require 's)
 (require 'rx)
+(require 'company)
+(require 'company-template)
 
 ;;; Utility functions and macros
 
@@ -1251,7 +1253,7 @@ Don't read this variable; call `dart-formatter-command' instead."
   :group 'dart-mode
   :package-version '(dart-mode . "1.0.0"))
 
-(defcustom dart-format-on-save nil
+(defcustom dart-format-on-save t
   "Whether to run the Dart formatter before saving."
   :type 'boolean
   :group 'dart-mode
@@ -1589,14 +1591,17 @@ Propertize text from START to END."
 Argument RESPONSE contains the candidates, documentation, parameters to be displayed."
 	(mapcar
 	 (lambda (completion)
-		 (let ((docSummary (assoc 'docSummary completion))
-					 (parameters  (assoc 'parameters (assoc 'element completion)))
-					 (docComplete  (assoc 'docComplete completion))
-					 (candidate (cdr (assq 'completion completion))))
-			 (propertize  candidate
-										(car parameters) (cdr parameters)
-										(car docSummary) (cdr docSummary)
-										(car docComplete) (cdr docComplete))))
+		 (let ((docSummary (dart--get completion 'docSummary))
+					 (parameters  (dart--get completion 'element 'parameters))
+					 (docComplete  (dart--get completion 'docComplete))
+					 (candidate (dart--get completion 'completion)))
+			 (when parameters
+					 (setq candidate (concat candidate parameters)))
+				 (print parameters)
+			 (propertize candidate
+										'parameters parameters
+										'docSummary docSummary
+										'docComplete docComplete)))
 	 results))
 
 (defun dart--get-completions (callback buffer)
@@ -1623,7 +1628,6 @@ Argument BUFFER the buffer containing the dart file."
                       (when is-last (dart--analysis-server-unsubscribe subscription))
                       (when (equal id completion-id)
 												(let ((candidates (dart--company-prepare-candidates results)))
-													(print candidates)
 													(with-current-buffer buffer
 														(funcall callback candidates)))))))))))))
 
@@ -1644,6 +1648,47 @@ Argument BUFFER the buffer containing the dart file."
   (let ((sym (company-grab-symbol-cons "\\." 1)))
     (if (consp sym) sym nil)))
 
+(defvar company-dart-insert-arguments t)
+
+(defun dart-company--insert-arguments (meta)
+  "Insert arguments when META is a function or a method."
+	(print meta)
+  (when (string-match " *[^(]+\\(.*\\)" meta)
+    (let ((args (company-go--extract-arguments (match-string 1 meta))))
+      (insert args)
+			(company-template-c-like-templatify args))))
+
+(defun company-template-dart-like-templatify (call)
+  (let* ((end (point-marker))
+         (beg (- (point) (length call)))
+         (templ (company-template-declare-template beg end))
+         paren-open paren-close)
+    (with-syntax-table (make-syntax-table (syntax-table))
+      (modify-syntax-entry ?< "(")
+      (modify-syntax-entry ?> ")")
+      (when (search-backward ")" beg t)
+        (setq paren-close (point-marker))
+        (forward-char 1)
+        (delete-region (point) end)
+        (backward-sexp)
+        (forward-char 1)
+        (setq paren-open (point-marker)))
+      (when (search-backward ">" beg t)
+        (let ((angle-close (point-marker)))
+          (forward-char 1)
+          (backward-sexp)
+          (forward-char)
+          (company-template--c-like-args templ angle-close)))
+      (when (looking-back "\\((\\*)\\)(" (line-beginning-position))
+        (delete-region (match-beginning 1) (match-end 1)))
+      (when paren-open
+        (goto-char paren-open)
+        (company-template--c-like-args templ paren-close)))
+    (if (overlay-get templ 'company-template-fields)
+        (company-template-move-to-first templ)
+      (company-template-remove-template templ)
+			(goto-char end))))
+
 ;;;###autoload
 (defun company-dart (command &optional arg &rest ignored)
   (interactive (list 'interactive))
@@ -1659,16 +1704,26 @@ Argument BUFFER the buffer containing the dart file."
     (annotation (dart--completion-annotation arg))
     (doc-buffer (dart--completion-doc arg))
     (meta (dart--completion-meta arg))
-    (post-completion (let ((anno (dart--completion-annotation arg))
-													 (meta (dart--completion-meta arg)))
-											 (when (> (length anno) 0)
-												 ;;not a getter
-												 (insert "()"))
-											 (when (> (length anno) 2)
-												 ;; > 2 implies non empty argument list
-												 (backward-char))
-											 (pos-tip-show (format "%s\n%s" anno meta) nil nil
-																		 nil -1)))))
+		(post-completion
+		 (print arg))))
+		;; (post-completion
+		;;  (when a(and company-dart-insert-arguments
+		;; 						(not (char-equal ?\( (following-char))))
+		;; 	 (message "before arg")
+		;; 	 (print arg)
+		;; 	 (message "after arg")
+		;; 	 (dart-company--insert-arguments
+		;; 		(get-text-property 0 'meta arg))))))
+    ;; (post-completion (let ((anno (dart--completion-annotation arg))
+		;; 											 (meta (dart--completion-meta arg)))
+		;; 									 (when (> (length anno) 0)
+		;; 										 ;;not a getter
+		;; 										 (insert "()"))
+		;; 									 (when (> (length anno) 2)
+		;; 										 ;; > 2 implies non empty argument list
+		;; 										 (backward-char))
+		;; 									 (pos-tip-show (format "%s\n%s" anno meta) nil nil
+		;; 																 nil -1)))))
 
 
 
@@ -1690,15 +1745,18 @@ Argument BUFFER the buffer containing the dart file."
 			(dart--start-analysis-server-for-current-buffer)))
 	(set (make-local-variable 'font-lock-defaults)
 			 '(dart--build-font-lock-keywords))
-	(add-hook (make-local-variable 'before-save-hook)
-						(lambda () (when dart-format-on-save (dart-format))))
 	(add-function :before-until (local 'eldoc-documentation-function)
                 #'dart--eldoc-function)
 	(add-hook 'idart-mode 'turn-on-eldoc-mode)
-	(if dart-enable-auto-pos-tip
-			(setq dart-pos-tip-timer (dart--turn-on-pos-tip-with-timer)))
+	;; (if dart-enable-auto-pos-tip
+	;; 		(setq dart-pos-tip-timer (dart--turn-on-pos-tip-with-timer)))
 	(setq-local syntax-propertize-function #'dart-syntax-propertize)
+	(add-hook (make-local-variable 'before-save-hook)
+						(lambda () (when dart-format-on-save (dart-format))))
+	(setq-local indent-tabs-mode nil)
 	(set (make-local-variable 'company-backends) '(company-dart)))
+
+
 
 (provide 'idart-mode)
 ;;; idart.el ends here
