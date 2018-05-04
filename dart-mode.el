@@ -1,3 +1,4 @@
+
 ;;; package --- Sum
 ;;; dart-mode.el --- Major mode for editing Dart files -*- lexical-binding: t; -*-
 
@@ -12,72 +13,8 @@
 
 ;;; Utility functions and macros
 
-(defun dart--read-file (filename)
-  "Return the contents of FILENAME."
-  (with-temp-buffer
-    (insert-file-contents filename)
-    (buffer-string)))
 
-(defmacro dart--with-temp-file (name-variable &rest body)
-  "Create a temporary file for the duration of BODY.
-Assigns the filename to NAME-VARIABLE. Doesn't change the current buffer.
-Returns the value of the last form in BODY."
-  (declare (indent 1))
-  `(-let [,name-variable (make-temp-file "dart-mode.")]
-     (unwind-protect
-         (progn ,@body)
-       (delete-file ,name-variable))))
 
-(defun dart--run-process (executable &rest args)
-  "Run EXECUTABLE with ARGS synchronously.
-Returns (STDOUT STDERR EXIT-CODE)."
-  (dart--with-temp-file stderr-file
-    (with-temp-buffer
-      (-let [exit-code
-             (apply #'call-process
-                    executable nil (list t stderr-file) nil args)]
-        (list
-         (buffer-string)
-         (dart--read-file stderr-file)
-         exit-code)))))
-
-(defun dart--try-process (executable &rest args)
-  "Like `dart--run-process', but only return stdout.
-Any stderr is logged using dart-log. Returns nil if the exit code is non-0."
-  (-let [result (apply #'dart--run-process executable args)]
-    (unless (string-empty-p (nth 1 result))
-      (dart-log (format "Error running %S:\n%s" (cons executable args) (nth 1 result))))
-    (if (eq (nth 2 result) 0) (nth 0 result))))
-
-(defcustom dart-sdk-path
-  ;; Use Platform.resolvedExecutable so that this logic works through symlinks
-  ;; and wrapper scripts.
-  (-when-let (dart (executable-find "dart"))
-    (dart--with-temp-file input
-      (with-temp-file input (insert "
-        import 'dart:io';
-        void main() {
-          print(Platform.resolvedExecutable);
-        }
-        "))
-      (-when-let (result (dart--try-process dart input))
-        (file-name-directory
-         (directory-file-name
-          (file-name-directory (string-trim result)))))))
-  "The absolute path to the root of the Dart SDK."
-  :group 'dart-mode
-  :type 'directory
-  :package-version '(dart-mode . "1.0.0"))
-
-(defun dart-executable-path ()
-  "The absolute path to the 'dart' executable.
-Returns nil if `dart-sdk-path' is nil."
-  (when dart-sdk-path
-    (concat dart-sdk-path
-            (file-name-as-directory "bin")
-            (if (memq system-type '(ms-dos windows-nt))
-                "dart.exe"
-              "dart"))))
 
 (defun dart--kill-buffer-and-window (buffer)
   "Kill BUFFER, and its window if it has one.
@@ -112,41 +49,6 @@ window, it respects the `quit-restore' window parameter. See
 
 
 ;; General configuration
-
-;; (defcustom dart-sdk-path
-;;   ;; Use Platform.resolvedExecutable so that this logic works through symlinks
-;;   ;; and wrapper scripts.
-;; 	(f-dirname (executable-find "dart"))
-;;   ;; (when-let (dart (executable-find "dart"))
-;; 	;; 	(setq input "hello")
-;;   ;;   (dart--with-temp-file input
-;;   ;;     (with-temp-file input (insert "
-;;   ;;       import 'dart:io';
-
-;;   ;;       void main() {
-;;   ;;         print(Platform.resolvedExecutable);
-;;   ;;       }
-;;   ;;       "))
-;;   ;;     (when-let (result (dart--try-process dart input))
-;;   ;;       (file-name-directory
-;;   ;;        (directory-file-name
-;;   ;;         (file-name-directory (string-trim result)))))
-;; 	;; 		))
-;;   "The absolute path to the root of the Dart SDK."
-;;   :group 'dart-mode
-;;   :type 'directory
-;;   :package-version '(dart-mode . "1.0.0"))
-
-;; (defun dart-executable-path ()
-;;   "The absolute path to the 'dart' executable.
-
-;; Returns nil if `dart-sdk-path' is nil."
-;;   (when dart-sdk-path
-;;     (concat dart-sdk-path
-;;             (file-name-as-directory "bin")
-;;             (if (memq system-type '(ms-dos windows-nt))
-;;                 "dart.exe"
-;;               "dart"))))
 
 ;;; Dart analysis server
 
@@ -203,12 +105,7 @@ inside a `before-save-hook'."
 (defun dart-formatter-command ()
   "The command for running the Dart formatter.
 This can be customized by setting `dart-formatter-command-override'."
-  (or dart-formatter-command-override
-      (when dart-sdk-path
-        (file-name-as-directory "bin")
-        (if (memq system-type '(ms-dos windows-nt))
-            "dartfmt.exe"
-          "dartfmt"))))
+  "dartfmt")
 
 (defvar dart--formatter-compilation-regexp
   '("^line \\([0-9]+\\), column \\([0-9]+\\) of \\([^ \n]+\\):" 3 1 2)
