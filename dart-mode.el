@@ -1,16 +1,83 @@
-;;; idart-mode.el --- Major mode for editing Dart files -*- lexical-binding: t; -*-
+;;; package --- Sum
+;;; dart-mode.el --- Major mode for editing Dart files -*- lexical-binding: t; -*-
 
-;; Author: Natalie Weizenbaum
-;; URL: https://g										(setq line-offset (- line-offset len))
-;; github.com/nex3/dart-mode
-;; Version: 1.0.2
-;; Package-Requires: ((emacs "24.5") (cl-lib "0.5") (dash "2.10.0") (flycheck "0.23") (s "1.11"))
-;; Keywords: language
-
+;;; Commentary:
 
 ;;; Code:
 
+(require 'dash)
+(require 'cl-lib)
+(require 'compile)
+(require 'rx)
+
 ;;; Utility functions and macros
+
+(defun dart--read-file (filename)
+  "Return the contents of FILENAME."
+  (with-temp-buffer
+    (insert-file-contents filename)
+    (buffer-string)))
+
+(defmacro dart--with-temp-file (name-variable &rest body)
+  "Create a temporary file for the duration of BODY.
+Assigns the filename to NAME-VARIABLE. Doesn't change the current buffer.
+Returns the value of the last form in BODY."
+  (declare (indent 1))
+  `(-let [,name-variable (make-temp-file "dart-mode.")]
+     (unwind-protect
+         (progn ,@body)
+       (delete-file ,name-variable))))
+
+(defun dart--run-process (executable &rest args)
+  "Run EXECUTABLE with ARGS synchronously.
+Returns (STDOUT STDERR EXIT-CODE)."
+  (dart--with-temp-file stderr-file
+    (with-temp-buffer
+      (-let [exit-code
+             (apply #'call-process
+                    executable nil (list t stderr-file) nil args)]
+        (list
+         (buffer-string)
+         (dart--read-file stderr-file)
+         exit-code)))))
+
+(defun dart--try-process (executable &rest args)
+  "Like `dart--run-process', but only return stdout.
+Any stderr is logged using dart-log. Returns nil if the exit code is non-0."
+  (-let [result (apply #'dart--run-process executable args)]
+    (unless (string-empty-p (nth 1 result))
+      (dart-log (format "Error running %S:\n%s" (cons executable args) (nth 1 result))))
+    (if (eq (nth 2 result) 0) (nth 0 result))))
+
+(defcustom dart-sdk-path
+  ;; Use Platform.resolvedExecutable so that this logic works through symlinks
+  ;; and wrapper scripts.
+  (-when-let (dart (executable-find "dart"))
+    (dart--with-temp-file input
+      (with-temp-file input (insert "
+        import 'dart:io';
+        void main() {
+          print(Platform.resolvedExecutable);
+        }
+        "))
+      (-when-let (result (dart--try-process dart input))
+        (file-name-directory
+         (directory-file-name
+          (file-name-directory (string-trim result)))))))
+  "The absolute path to the root of the Dart SDK."
+  :group 'dart-mode
+  :type 'directory
+  :package-version '(dart-mode . "1.0.0"))
+
+(defun dart-executable-path ()
+  "The absolute path to the 'dart' executable.
+Returns nil if `dart-sdk-path' is nil."
+  (when dart-sdk-path
+    (concat dart-sdk-path
+            (file-name-as-directory "bin")
+            (if (memq system-type '(ms-dos windows-nt))
+                "dart.exe"
+              "dart"))))
 
 (defun dart--kill-buffer-and-window (buffer)
   "Kill BUFFER, and its window if it has one.
@@ -18,7 +85,7 @@
 This is different than `kill-buffer' because, if the buffer has a
 window, it respects the `quit-restore' window parameter. See
 `quit-window' for details."
-  (-if-let (window (get-buffer-window buffer))
+  (if-let (window (get-buffer-window buffer))
       (quit-window t window)
     (kill-buffer buffer)))
 
@@ -44,88 +111,42 @@ window, it respects the `quit-restore' window parameter. See
       (insert "\n"))))
 
 
-(defun dart--get (alist &rest keys)
-  "Recursively call `cdr' and `assoc' on ALIST with KEYS.
-Returns the value rather than the full alist cell."
-  (--reduce-from (cdr (assoc it acc)) alist keys))
+;; General configuration
 
-(defun dart--read-file (filename)
-  "Returns the contents of FILENAME."
-  (with-temp-buffer
-    (insert-file-contents filename)
-    (buffer-string)))
+;; (defcustom dart-sdk-path
+;;   ;; Use Platform.resolvedExecutable so that this logic works through symlinks
+;;   ;; and wrapper scripts.
+;; 	(f-dirname (executable-find "dart"))
+;;   ;; (when-let (dart (executable-find "dart"))
+;; 	;; 	(setq input "hello")
+;;   ;;   (dart--with-temp-file input
+;;   ;;     (with-temp-file input (insert "
+;;   ;;       import 'dart:io';
 
+;;   ;;       void main() {
+;;   ;;         print(Platform.resolvedExecutable);
+;;   ;;       }
+;;   ;;       "))
+;;   ;;     (when-let (result (dart--try-process dart input))
+;;   ;;       (file-name-directory
+;;   ;;        (directory-file-name
+;;   ;;         (file-name-directory (string-trim result)))))
+;; 	;; 		))
+;;   "The absolute path to the root of the Dart SDK."
+;;   :group 'dart-mode
+;;   :type 'directory
+;;   :package-version '(dart-mode . "1.0.0"))
 
-(defun dart--run-process (executable &rest args)
-  "Runs EXECUTABLE with ARGS synchronously.
-Returns (STDOUT STDERR EXIT-CODE)."
-  (dart--with-temp-file stderr-file
-    (with-temp-buffer
-      (-let [exit-code
-             (apply #'call-process
-                    executable nil (list t stderr-file) nil args)]
-        (list
-         (buffer-string)
-         (dart--read-file stderr-file)
-         exit-code)))))
+;; (defun dart-executable-path ()
+;;   "The absolute path to the 'dart' executable.
 
-(defun dart--try-process (executable &rest args)
-  "Like `dart--run-process', but only return stdout.
-Any stderr is logged using dart-log. Returns nil if the exit code is non-0."
-  (-let [result (apply #'dart--run-process executable args)]
-    (unless (string-empty-p (nth 1 result))
-      (dart-log (format "Error running %S:\n%s" (cons executable args) (nth 1 result))))
-    (if (eq (nth 2 result) 0) (nth 0 result))))
-
-(defvar dart--do-it-again-callback nil
-  "A callback to call when `dart-do-it-again' is invoked.
-
-Only set in `dart-popup-mode'.")
-(make-variable-buffer-local 'dart--do-it-again-callback)
-
-(defmacro dart--with-temp-file (name-variable &rest body)
-  "Creates a temporary file for the duration of BODY.
-Assigns the filename to NAME-VARIABLE. Doesn't change the current buffer.
-Returns the value of the last form in BODY."
-  (declare (indent 1))
-  `(-let [,name-variable (make-temp-file "dart-mode.")]
-     (unwind-protect
-         (progn ,@body)
-       (delete-file ,name-variable))))
-
-;;; General configuration
-
-(defcustom dart-sdk-path
-  ;; Use Platform.resolvedExecutable so that this logic works through symlinks
-  ;; and wrapper scripts.
-  (-when-let (dart (executable-find "dart"))
-    (dart--with-temp-file input
-      (with-temp-file input (insert "
-        import 'dart:io';
-
-        void main() {
-          print(Platform.resolvedExecutable);
-        }
-        "))
-      (-when-let (result (dart--try-process dart input))
-        (file-name-directory
-         (directory-file-name
-          (file-name-directory (string-trim result)))))))
-  "The absolute path to the root of the Dart SDK."
-  :group 'dart-mode
-  :type 'directory
-  :package-version '(dart-mode . "1.0.0"))
-
-(defun dart-executable-path ()
-  "The absolute path to the 'dart' executable.
-
-Returns nil if `dart-sdk-path' is nil."
-  (when dart-sdk-path
-    (concat dart-sdk-path
-            (file-name-as-directory "bin")
-            (if (memq system-type '(ms-dos windows-nt))
-                "dart.exe"
-              "dart"))))
+;; Returns nil if `dart-sdk-path' is nil."
+;;   (when dart-sdk-path
+;;     (concat dart-sdk-path
+;;             (file-name-as-directory "bin")
+;;             (if (memq system-type '(ms-dos windows-nt))
+;;                 "dart.exe"
+;;               "dart"))))
 
 ;;; Dart analysis server
 
@@ -150,7 +171,6 @@ Returns nil if `dart-sdk-path' is nil."
 
 (defcustom dart-formatter-command-override nil
   "The command for running the Dart formatter.
-
 Don't read this variable; call `dart-formatter-command' instead."
   :type 'string
   :group 'dart-mode
@@ -171,7 +191,6 @@ Don't read this variable; call `dart-formatter-command' instead."
 (defcustom dart-formatter-show-errors 'buffer
   "Where to display Dart formatter error output.
 It can either be displayed in its own buffer, in the echo area, or not at all.
-
 Please note that Emacs outputs to the echo area when writing
 files and will overwrite the formatter's echo output if used from
 inside a `before-save-hook'."
@@ -183,14 +202,13 @@ inside a `before-save-hook'."
 
 (defun dart-formatter-command ()
   "The command for running the Dart formatter.
-
 This can be customized by setting `dart-formatter-command-override'."
   (or dart-formatter-command-override
       (when dart-sdk-path
         (file-name-as-directory "bin")
-            (if (memq system-type '(ms-dos windows-nt))
-                "dartfmt.exe"
-              "dartfmt"))))
+        (if (memq system-type '(ms-dos windows-nt))
+            "dartfmt.exe"
+          "dartfmt"))))
 
 (defvar dart--formatter-compilation-regexp
   '("^line \\([0-9]+\\), column \\([0-9]+\\) of \\([^ \n]+\\):" 3 1 2)
@@ -203,7 +221,6 @@ See `compilation-error-regexp-alist' for help on their format.")
 
 (defun dart-format ()
   "Format the current buffer using the Dart formatter.
-
 By default, this uses the formatter in `dart-sdk-path'. However,
 this can be overridden by customizing
 `dart-formatter-command-override'."
@@ -275,6 +292,7 @@ this can be overridden by customizing
                 (-let [text (buffer-substring start (point))]
                   (with-current-buffer target-buffer
 										(setq line-offset (- line-offset len))
+;;                    (decf line-offset len)
                     (goto-char (point-min))
                     (forward-line (- from len line-offset))
                     (insert text)))))
@@ -284,6 +302,7 @@ this can be overridden by customizing
                 (goto-char (point-min))
                 (forward-line (- from line-offset 1))
 								(setq line-offset (+ line-offset len))
+;;                (incf line-offset len)
                 (let (kill-ring) (kill-whole-line len))))
 
              (t
@@ -309,6 +328,7 @@ This replaces references to TEMP-FILE with REAL-FILE."
 
 
 
+
 (defconst dart-dangling-operators-regexp "[^-]-\\|[^+]\\+\\|[/*&><.=|^]")
 (defconst dart--max-dangling-operator-length 2
   "The maximum length of dangling operators.
@@ -324,11 +344,11 @@ that constant is changed.")
 (defconst dart-func-regexp (concat "\\_<func\\_>\\s *\\(" dart-identifier-regexp "\\)"))
 (defconst dart-variable-regexp "\\(\\w+\\)\\s-+=")
 (defconst dart-func-meth-regexp (concat
-                               "\\_<func\\_>\\s *\\(?:(\\s *"
-                               "\\(" dart-identifier-regexp "\\s +\\)?" dart-type-regexp
-                               "\\s *)\\s *\\)?\\("
-                               dart-identifier-regexp
-                               "\\)("))
+																 "\\_<func\\_>\\s *\\(?:(\\s *"
+																 "\\(" dart-identifier-regexp "\\s +\\)?" dart-type-regexp
+																 "\\s *)\\s *\\)?\\("
+																 dart-identifier-regexp
+																 "\\)("))
 
 ;; (defconst dart-builtins
 ;;   '("append" "cap"   "close"   "complex" "copy"
@@ -352,7 +372,7 @@ that constant is changed.")
   "All keywords in the Go language.  Used for font locking.")
 
 (defconst dart-constants '("null" "true" "false"))
-(defconst dart-type-name-regexp (concat "\\(?:[*(]\\)*\\(\\(?:" go-identifier-regexp "\\.\\)?" go-identifier-regexp "\\)"))
+;(defconst dart-type-name-regexp (concat "\\(?:[*(]\\)*\\(\\(?:" go-identifier-regexp "\\.\\)?" go-identifier-regexp "\\)"))
 
 
 (defun dart--build-font-lock-keywords ()
@@ -419,7 +439,7 @@ Propertize text from START to END."
 		;;       mark last quote and call dart-syntax-properties again from new Start to END
 		;;     else do nothing
 		(when (re-search-forward "\\('''\\)\\|\\(\"\"\"\\)" end t)
-			(if-let ((matchingquote (nth 8 (syntax-ppss (match-beginning 0)))))			 
+			(if-let ((matchingquote (nth 8 (syntax-ppss (match-beginning 0)))))
 					(if (and (equal (char-after matchingquote) (char-after (match-beginning 0))) (dart-syntax-is-triple-quote matchingquote))
 							(put-text-property (+ (match-beginning 0) 2) (+ (match-beginning 0) 3) 'syntax-table (string-to-syntax "|")))
 				(put-text-property (match-beginning 0) (+ (match-beginning 0) 1) 'syntax-table (string-to-syntax "|")))
@@ -435,9 +455,6 @@ Propertize text from START to END."
 (define-derived-mode dart-mode prog-mode "Dart"
 	"Major mode for editing Dart"
 	:syntax-table dart-mode-syntax-table
-	(if (null dart-sdk-path)
-				(dart-log
-				 "Cannot find 'dart' executable or Dart analysis server snapshot."))
 	(set (make-local-variable 'font-lock-defaults)
 			 '(dart--build-font-lock-keywords))
 	;; (if dart-enable-auto-pos-tip
